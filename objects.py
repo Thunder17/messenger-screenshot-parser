@@ -2,6 +2,8 @@ import numpy as np
 import cv2
 from typing import List
 import re
+from statistics import mode
+from sklearn.cluster import DBSCAN
 
 from sklearn.cluster import KMeans
 
@@ -51,11 +53,13 @@ class Screen:
             res_img = self._get_img_with_sectors(res_img)
         return res_img
 
+    def get_img_gray(self):
+        return cv2.cvtColor(self._img.copy(), cv2.COLOR_BGR2GRAY)
+
     def _get_img_with_boxes(self, img):
         img_r = img.copy()
         colors = {
             None: (200, 200, 200),
-            'trash': (200, 200, 200),
             'left': (10, 180, 10),
             'right': (10, 10, 180)
         }
@@ -119,7 +123,7 @@ class Screen:
         self.text_blocks = [block for block in self.text_blocks if block.user != 'trash']
 
     def classify_users_kmeans(self):
-        mode_block_colors = np.array([block.get_mode_color(self._img) for block in self.text_blocks if block.user != 'trash'])
+        mode_block_colors = np.array([block.get_mean_color_partial(self.get_img_gray()) for block in self.text_blocks]).reshape(-1, 1)
         km = KMeans(n_clusters=2, random_state=17).fit(mode_block_colors)
         label_users = {
             0: 'left',
@@ -130,31 +134,37 @@ class Screen:
         for i in range(len(km.labels_)):
             self.text_blocks[i].user = label_users[km.labels_[i]]
 
+    def classify_users_kmeans_features(self):
+        gray_colors = np.array([block.get_left_bottom(self.get_img_gray()) for block in self.text_blocks]) / 255
+        block_widths = np.array([block.width for block in self.text_blocks])
+        block_centers = np.array([block.center['x'] for block in self.text_blocks])
+        horizontal = (block_centers) / self._img.shape[1]
+        X = np.column_stack((gray_colors, horizontal))
+        km = KMeans(n_clusters=2, random_state=17).fit(X)
+        label_users = {
+            0: 'left',
+            1: 'right',
+            2: None
+        }
+        if len(km.labels_) != len(self.text_blocks):
+            raise ValueError('KMeans data should have same shape as text_blocks')
+        for i in range(len(km.labels_)):
+            self.text_blocks[i].user = label_users[km.labels_[i]]
     def filter_replies_next(self):
         left_blocks = [block for block in self.text_blocks if block.user == 'left']
         right_blocks = [block for block in self.text_blocks if block.user == 'right']
 
-        for i in range(len(left_blocks) - 1, 0, -1):
-            color1 = left_blocks[i].get_mean_color(self.get_img_blurred()).astype(int).mean()
-            color2 = left_blocks[i - 1].get_mean_color(self.get_img_blurred()).astype(int).mean()
-            if ((abs(left_blocks[i].y0 - left_blocks[i - 1].y1) < left_blocks[i].height + left_blocks[i - 1].height)
-                    and left_blocks[i].user != 'reply' and np.abs(color1 - color2) > 5):
-                left_blocks[i - 1].user = 'reply'
-                if i > 1:
-                    color3 = left_blocks[i - 2].get_mean_color(self.get_img_blurred()).astype(int).mean()
-                    if np.abs(color1 - color3) > 8:
-                        left_blocks[i - 2].user = 'reply'
-
-        for i in range(len(right_blocks) - 1, 0, -1):
-            color1 = right_blocks[i].get_mean_color(self.get_img_blurred()).astype(int).mean()
-            color2 = right_blocks[i - 1].get_mean_color(self.get_img_blurred()).astype(int).mean()
-            if ((abs(right_blocks[i].y0 - right_blocks[i - 1].y1) < right_blocks[i].height + right_blocks[i - 1].height)
-                    and right_blocks[i].user != 'reply' and np.abs(color1 - color2) > 5):
-                right_blocks[i - 1].user = 'reply'
-                if i > 1:
-                    color3 = right_blocks[i - 2].get_mean_color(self.get_img_blurred()).astype(int).mean()
-                    if np.abs(color1 - color3) > 8:
-                        right_blocks[i - 2].user = 'reply'
+        for block_list in [left_blocks, right_blocks]:
+            for i in range(len(block_list) - 1, 0, -1):
+                color1 = block_list[i].get_mean_color_partial(self.get_img_blurred()).astype(int).mean()
+                color2 = block_list[i - 1].get_mean_color_partial(self.get_img_blurred()).astype(int).mean()
+                if ((abs(block_list[i].y0 - block_list[i - 1].y1) < block_list[i].height + block_list[i - 1].height)
+                        and block_list[i].user != 'reply' and np.abs(color1 - color2) > 5):
+                    block_list[i - 1].user = 'reply'
+                    if i > 1:
+                        color3 = block_list[i - 2].get_mean_color_partial(self.get_img_blurred()).astype(int).mean()
+                        if np.abs(color1 - color3) > 7:
+                            block_list[i - 2].user = 'reply'
 
         self.text_blocks = [block for block in self.text_blocks if block.user != 'reply']
 
@@ -188,10 +198,21 @@ class TextBlock:
         return img[self.y0:self.y1, self.x0:(self.x0 + (self.x1 - self.x0) // 4)]
 
     def get_mode_color(self, img: np.ndarray):
-        return mode_color(self.get_sector(img).reshape(-1, 3))
+        if len(img.shape) == 3:
+            return mode_color(self.get_sector(img).reshape(-1, 3))
+        elif len(img.shape) == 2:
+            return mode(self.get_sector(img).ravel())
+        else:
+            raise ValueError("Invalid img shape, should be (n, m) or (n, m, 3)")
 
-    def get_mean_color(self, img: np.ndarray):
-        return np.mean(self.get_sector_partial(img).reshape(-1, 3), axis=0)
+    def get_mean_color_partial(self, img: np.ndarray):
+        if len(img.shape) == 3:
+            return np.mean(self.get_sector_partial(img).reshape(-1, 3), axis=0)
+        elif len(img.shape) == 2:
+            return np.mean(self.get_sector_partial(img).ravel())
+        else:
+            raise ValueError("Invalid img shape, should be (n, m) or (n, m, 3)")
+
 
     def get_left_bottom(self, img: np.ndarray):
         return img[self.y0, self.x0]

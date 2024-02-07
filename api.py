@@ -13,10 +13,10 @@ with open('tokens.json', 'r') as f:
     RECOGNITION_URL = tokens['RECOGNITION_URL']
 
 
-img_path = 'test_images/test_img.jpg'
+img_path = 'test_images/test_img_inst_3.jpg'
 
 
-def get_response(img_path='test_images/test_img.jpg', save_response_json=True):
+def get_response(img_path=img_path, save_response_json=True):
     # Getting IAM-token
     try:
         response = requests.post(
@@ -55,3 +55,4 @@ def get_response(img_path='test_images/test_img.jpg', save_response_json=True):
         with open('test_jsons/' + img_path.split('/')[-1] + '.json', 'w') as f:
             json.dump(result, f)
     return result
+get_response()
