@@ -114,16 +114,12 @@ class Screen:
             elif block.closest_left + (block.closest_right - block.closest_left) / 2 >= self._img.shape[1] * 0.51:
                 block.user = 'left'
 
-
     def classify_users_kmeans_features(self):
-        gray_colors = np.array([block.get_mode_color(cv2.cvtColor(self.get_img_blurred(), cv2.COLOR_BGR2GRAY)) for block in self.text_blocks])
-        block_widths = np.array([block.width for block in self.text_blocks])
-        block_centers = np.array([block.center['x'] for block in self.text_blocks])
-        horizontal = self._img.shape[1] / 2 - np.array(block_centers)
-        bbb = np.array([block.closest_left + (block.closest_right - block.closest_left) / 2 for block in self.text_blocks])
+        gray_colors = np.array([block.get_mean_color_partial(cv2.cvtColor(self.get_img_blurred(), cv2.COLOR_BGR2GRAY)) for block in self.text_blocks])
+        horizontal = np.array([block.closest_left + (block.closest_right - block.closest_left) / 2 for block in self.text_blocks])
         X = np.column_stack((
-            minmax_scale(gray_colors),
-            bbb / self._img.shape[1]
+            minmax_scale(gray_colors) * 0.7,
+            minmax_scale(horizontal)
         ))
 
         km = KMeans(n_clusters=2, random_state=17).fit(X)
@@ -179,16 +175,16 @@ class Screen:
                 block.closest_right = block.x1 + 1 + np.argmax(right)
             else:
                 block.closest_right = self._img.shape[1]
+            block.box_center_x = block.closest_left + (block.closest_right - block.closest_left) / 2
 
             show = cv2.line(show, (block.closest_left, bot), (block.closest_left, top), (100, 100, 250), 5)
             show = cv2.line(show, (block.closest_right, bot), (block.closest_right, top), (100, 100, 250), 5)
-            if (abs((block.closest_left + (block.closest_right - block.closest_left) / 2) - self._img.shape[1] / 2) < self._img.shape[1] * 0.05
-                and block.width < self._img.shape[1] * 0.5) or block.closest_right == self._img.shape[1] and block.closest_left == 0\
-                or (block.y1 - block.y0 > self._img.shape[0] * 0.2 and len(block.text) < 50):
+            if (block.closest_left == 0 and block.closest_right == self._img.shape[1])\
+                or (block.y1 - block.y0 > self._img.shape[0] * 0.2 and len(block.text) < 50)\
+                    or abs(block.box_center_x - (self._img.shape[1]/2)) < self._img.shape[1] * 0.01:
                 block.user = 'trash'
-        #
-        # cv2.imshow('show', show)
-        # cv2.waitKey(0)
+
+        cv2.imwrite('box_detection.jpg', show)
         self.text_blocks = [block for block in self.text_blocks if block.user != 'trash']
 
 
