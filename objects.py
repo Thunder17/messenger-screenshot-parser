@@ -3,7 +3,7 @@ import cv2
 from typing import List
 import re
 from statistics import mode
-from sklearn.cluster import DBSCAN
+from sklearn.preprocessing import minmax_scale
 
 from sklearn.cluster import KMeans
 
@@ -27,10 +27,10 @@ class Screen:
             [-2],
             [-2]
         ]), 10)
-        conv1 = cv2.filter2D(src=gray, ddepth=-1, kernel=kernel)
-        conv2 = cv2.filter2D(src=gray, ddepth=-1, kernel=-kernel)
-        means1 = np.mean(conv1, axis=1)
-        means2 = np.mean(conv2, axis=1)
+        self.conv_horizontal1 = cv2.filter2D(src=gray, ddepth=-1, kernel=kernel)
+        self.conv_horizontal2 = cv2.filter2D(src=gray, ddepth=-1, kernel=-kernel)
+        means1 = np.mean(self.conv_horizontal1, axis=1)
+        means2 = np.mean(self.conv_horizontal2, axis=1)
         line_inds = sorted([i for i in range(len(means1)) if means1[i] > 220] + [i for i in range(len(means2)) if means2[i] > 220])
         top_lines = [line for line in line_inds if line < img.shape[0] * 0.25]
         bot_lines = [line for line in line_inds if line > img.shape[0] * 0.75]
@@ -40,8 +40,8 @@ class Screen:
             self.sector_lines[1] = min(bot_lines)
         self.text_blocks = [block for block in text_blocks if self.sector_lines[0] < block.center['y'] < self.sector_lines[1]]
 
-    def get_img_blurred(self):
-        return cv2.medianBlur(self._img, 33)
+    def get_img_blurred(self, ksize=33):
+        return cv2.medianBlur(self._img, ksize)
 
     def get_img(self, draw_boxes=False, draw_sectors=False):
         if not (draw_boxes or draw_sectors):
@@ -109,37 +109,23 @@ class Screen:
 
     def classify_users_positional(self):
         for block in self.text_blocks:
-            if block.center['x'] <= self._img.shape[1] * 0.49:
+            if block.closest_left + (block.closest_right - block.closest_left) / 2 <= self._img.shape[1] * 0.49:
                 block.user = 'right'
-            elif block.center['x'] >= self._img.shape[1] * 0.51:
+            elif block.closest_left + (block.closest_right - block.closest_left) / 2 >= self._img.shape[1] * 0.51:
                 block.user = 'left'
 
-    def filter_trash(self):
-        for block in self.text_blocks:
-            width = block.x1 - block.x0
-            if width < self._img.shape[1] * 0.5 and (self._img.shape[1] * 0.4 < block.center['x'] < self._img.shape[1] * 0.6)\
-                or abs(block.center['x'] - self.get_img().shape[1] // 2) < self.get_img().shape[1] * 0.01:
-                block.user = 'trash'
-        self.text_blocks = [block for block in self.text_blocks if block.user != 'trash']
-
-    def classify_users_kmeans(self):
-        mode_block_colors = np.array([block.get_mean_color_partial(self.get_img_gray()) for block in self.text_blocks]).reshape(-1, 1)
-        km = KMeans(n_clusters=2, random_state=17).fit(mode_block_colors)
-        label_users = {
-            0: 'left',
-            1: 'right'
-        }
-        if len(km.labels_) != len(self.text_blocks):
-            raise ValueError('KMeans data should have same shape as text_blocks')
-        for i in range(len(km.labels_)):
-            self.text_blocks[i].user = label_users[km.labels_[i]]
 
     def classify_users_kmeans_features(self):
-        gray_colors = np.array([block.get_left_bottom(self.get_img_gray()) for block in self.text_blocks]) / 255
+        gray_colors = np.array([block.get_mode_color(cv2.cvtColor(self.get_img_blurred(), cv2.COLOR_BGR2GRAY)) for block in self.text_blocks])
         block_widths = np.array([block.width for block in self.text_blocks])
         block_centers = np.array([block.center['x'] for block in self.text_blocks])
-        horizontal = (block_centers) / self._img.shape[1]
-        X = np.column_stack((gray_colors, horizontal))
+        horizontal = self._img.shape[1] / 2 - np.array(block_centers)
+        bbb = np.array([block.closest_left + (block.closest_right - block.closest_left) / 2 for block in self.text_blocks])
+        X = np.column_stack((
+            minmax_scale(gray_colors),
+            bbb / self._img.shape[1]
+        ))
+
         km = KMeans(n_clusters=2, random_state=17).fit(X)
         label_users = {
             0: 'left',
@@ -150,6 +136,7 @@ class Screen:
             raise ValueError('KMeans data should have same shape as text_blocks')
         for i in range(len(km.labels_)):
             self.text_blocks[i].user = label_users[km.labels_[i]]
+
     def filter_replies_next(self):
         left_blocks = [block for block in self.text_blocks if block.user == 'left']
         right_blocks = [block for block in self.text_blocks if block.user == 'right']
@@ -167,6 +154,45 @@ class Screen:
                             block_list[i - 2].user = 'reply'
 
         self.text_blocks = [block for block in self.text_blocks if block.user != 'reply']
+
+    def check_boxes(self):
+        show = self.get_img()
+        gray_blur = cv2.cvtColor(self.get_img_blurred(25), cv2.COLOR_BGR2GRAY)
+        kernel = np.array([2, 2, 2, -2, -2 ,-2]) * np.ones((10, 1))
+        conv_vertical1 = cv2.filter2D(src=gray_blur, ddepth=-1, kernel=kernel)
+        conv_vertical2 = cv2.filter2D(src=gray_blur, ddepth=-1, kernel=-kernel)
+        _, thresh1 = cv2.threshold(conv_vertical1, 127, 255, cv2.THRESH_BINARY)
+        _, thresh2 = cv2.threshold(conv_vertical2, 127, 255, cv2.THRESH_BINARY)
+        thresh = thresh1 + thresh2
+        for block in self.text_blocks:
+            bot, top = int(block.center['y'] - block.height / 4), int(block.center['y'] + block.height / 4)
+
+            left = thresh[bot:top, 0:block.x0 - 1].mean(axis=0) > 245
+            right = thresh[bot:top, block.x1 + 5:self._img.shape[1]].mean(axis=0) > 245
+
+            if left.sum() > 0:
+                block.closest_left = len(left) - np.argmax(left[::-1])
+            else:
+                block.closest_left = 0
+
+            if right.sum() > 0:
+                block.closest_right = block.x1 + 1 + np.argmax(right)
+            else:
+                block.closest_right = self._img.shape[1]
+
+            show = cv2.line(show, (block.closest_left, bot), (block.closest_left, top), (100, 100, 250), 5)
+            show = cv2.line(show, (block.closest_right, bot), (block.closest_right, top), (100, 100, 250), 5)
+            if (abs((block.closest_left + (block.closest_right - block.closest_left) / 2) - self._img.shape[1] / 2) < self._img.shape[1] * 0.05
+                and block.width < self._img.shape[1] * 0.5) or block.closest_right == self._img.shape[1] and block.closest_left == 0\
+                or (block.y1 - block.y0 > self._img.shape[0] * 0.2 and len(block.text) < 50):
+                block.user = 'trash'
+        #
+        # cv2.imshow('show', show)
+        # cv2.waitKey(0)
+        self.text_blocks = [block for block in self.text_blocks if block.user != 'trash']
+
+
+
 
 
 class TextBlock:
@@ -216,6 +242,7 @@ class TextBlock:
 
     def get_left_bottom(self, img: np.ndarray):
         return img[self.y0, self.x0]
+
 
 
 def mode_color(a: np.ndarray):

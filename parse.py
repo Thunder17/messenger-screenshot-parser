@@ -29,15 +29,15 @@ def parse(img_name, jsons_path, images_path, save_path):
         textblocks
     )
     screen.recursive_blocks_join_()
-    screen.filter_trash()
-    #screen.classify_users_kmeans()
-    screen.classify_users_kmeans_features()
+    screen.check_boxes()
+    screen.classify_users_positional()
+
 
     # for block in screen.text_blocks:
     #     if block.user == 'right':
     #         print(f'{block.text} -- {block.get_mean_color_partial(screen.get_img_gray())} ')
 
-    #screen.filter_replies_next()
+    screen.filter_replies_next()
     cv2.imshow('1', screen.get_img(True, True))
     cv2.waitKey(0)
     cv2.imwrite(save_path + img_name, screen.get_img(True, True))
