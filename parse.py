@@ -29,14 +29,15 @@ def parse(img_name, jsons_path, images_path, save_path):
         textblocks
     )
     screen.recursive_blocks_join_()
-    screen.check_boxes()
-    #screen.classify_users_positional()
-    screen.classify_users_kmeans_features()
-
-    for block in screen.text_blocks:
-        print(f'{block.text} -- {block.get_mean_color_partial(screen.get_img_blurred()).mean()} ')
-
+    screen.scan()
+    screen.detect_edges_scanned()
+    screen.classify_users_positional()
     screen.filter_replies_next()
-    cv2.imwrite('1.jpg', screen.get_img(True, True))
-    # cv2.waitKey(0)
-    # cv2.imwrite(save_path + img_name, screen.get_img(True, True))
+    #
+    #
+    cv2.imwrite(save_path + img_name, screen.get_img(True, True))
+    cv2.imshow('1.jpg', screen.get_img(True, True))
+    cv2.imshow('efefef', screen.scanned_img)
+
+    cv2.waitKey(0)
+    return {str(i): {'user': block.user, 'text': block.text} for i, block in enumerate(screen.text_blocks)}

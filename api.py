@@ -55,4 +55,3 @@ def get_response(img_path=img_path, save_response_json=True):
         with open('test_jsons/' + img_path.split('/')[-1] + '.json', 'w') as f:
             json.dump(result, f)
     return result
-get_response()
