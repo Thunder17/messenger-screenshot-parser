@@ -5,12 +5,12 @@ import json
 from objects import Screen, TextBlock, mode_color
 
 
-def parse(img_name, jsons_path, images_path, save_path):
+def parse(data, img_name, save_path):
 
-    f = open(jsons_path + img_name + '.json', 'r')
-    img = cv2.imread(images_path + img_name)
+    # f = open(jsons_path + img_name + '.json', 'r')
+    img = cv2.imread(img_name)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    data = json.load(f)
+    # data = json.load(f)
 
     textblocks = []
     for block in data['textAnnotation']['blocks']:
@@ -33,8 +33,6 @@ def parse(img_name, jsons_path, images_path, save_path):
     screen.detect_edges_scanned()
     screen.classify_users_positional()
     screen.filter_replies_next()
-    #
-    #
     cv2.imwrite(save_path + img_name, screen.get_img(True, True))
     cv2.imshow('1.jpg', screen.get_img(True, True))
     cv2.imshow('efefef', screen.scanned_img)

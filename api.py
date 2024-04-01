@@ -24,10 +24,12 @@ def get_response(img_path=img_path, save_response_json=True):
             json={"yandexPassportOauthToken": OAUTH_TOKEN},
         )
     except requests.exceptions.ConnectionError:
-        print('Getting IAM-token failed: ConnectionError')
+        raise ConnectionError('Getting IAM-token failed: ConnectionError')
 
-
-    IAM_TOKEN = json.loads(response.text)['iamToken']
+    try:
+        IAM_TOKEN = json.loads(response.text)['iamToken']
+    except KeyError:
+        raise ConnectionError('Ошибка подключения к API')
 
     # Getting an image
     img = open(img_path, 'rb').read()

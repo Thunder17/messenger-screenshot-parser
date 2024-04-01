@@ -188,13 +188,6 @@ class Screen:
         """
         Performs text segmentation on the screenshot image using DBSCAN clustering.
 
-        The image is first converted to a grayscale NumPy array and then reshaped into a 2D array with each pixel represented by 5 features:
-            - X coordinate
-            - Y coordinate
-            - Red channel value
-            - Green channel value
-            - Blue channel value
-
         DBSCAN is then applied to this feature array with a fixed epsilon value and minimum number of samples required to form a cluster.
         The resulting labels are used to identify different text regions in the image.
 
