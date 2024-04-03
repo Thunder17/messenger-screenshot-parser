@@ -1,12 +1,11 @@
 import numpy as np
 
-#from parse import *
 import requests
 import base64
 import json
 import cv2
 
-with open('tokens.json', 'r') as f:
+with open('../data/tokens.json', 'r') as f:
     tokens = json.load(f)
     OAUTH_TOKEN = tokens['OAUTH_TOKEN']
     CATALOG_ID = tokens['CATALOG_ID']

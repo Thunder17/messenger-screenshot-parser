@@ -1,6 +1,4 @@
-import numpy as np
 import cv2
-import json
 
 from objects import Screen, TextBlock, mode_color
 

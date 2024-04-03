@@ -3,7 +3,6 @@ import cv2
 from typing import List
 import re
 from statistics import mode
-from sklearn.preprocessing import minmax_scale
 from dbscan import DBSCAN
 
 from sklearn.cluster import KMeans
